@@ -1,0 +1,11 @@
+package:
+  name: s3everywhere
+  version: v0.1
+build:
+  number: 1
+requirements:
+  build:
+    - python=3.7
+  run:
+    - python=3
+    - boto3
