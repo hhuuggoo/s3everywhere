@@ -7,7 +7,7 @@ class S3Bucket(object):
         self.name = name
 
     def put_object(self, key, data):
-        self.storage.client.put_object(
+        self.storage._client.put_object(
             ACL='private',
             Body=to_bytes(data),
             Bucket=self.name,
@@ -15,13 +15,13 @@ class S3Bucket(object):
         )
 
     def get_object(self, key):
-        return self.storage.client.get_object(
+        return self.storage._client.get_object(
             Bucket=self.name,
             Key=key
         )['Body'].read()
 
     def delete_objects(self, *keys):
-        self.storage.client.delete_objects(
+        self.storage._client.delete_objects(
             Bucket=self.name,
             Delete={
                 'Objects': [{'Key': k} for k in keys]
@@ -29,7 +29,7 @@ class S3Bucket(object):
         )
 
     def _bucket(self):
-        return self.storage.resource.Bucket(self.name)
+        return self.storage._resource.Bucket(self.name)
 
     def keys(self):
         bucket = self._bucket()
@@ -43,7 +43,7 @@ class S3Bucket(object):
         self.delete_objects(*keys)
 
     def delete(self):
-        self.storage.client.delete_bucket(Bucket=self.name)
+        self.storage._client.delete_bucket(Bucket=self.name)
 
 
 class S3Storage(object):
@@ -51,15 +51,23 @@ class S3Storage(object):
         self.region = default_region
         pass
 
+    def bucket(self, name):
+        return S3Bucket(self, name)
+
     @cached_property
-    def client(self):
+    def _client(self):
         import boto3
         return boto3.client('s3')
 
     @cached_property
-    def resource(self):
+    def _resource(self):
         import boto3
         return boto3.resource('s3')
+
+    def exists(self, name):
+        bucket = self.resource.Bucket(name)
+        bucket.load()
+        return bucket.creation_date is not None
 
     def create_bucket(self, name, acl='private'):
         self.client.create_bucket(
@@ -71,9 +79,9 @@ class S3Storage(object):
         )
         bucket = S3Bucket(self, name)
         bucket._bucket().wait_until_exists()
-        self.block_public_access(name)
+        self._block_public_access(name)
 
-    def block_public_access(self, name):
+    def _block_public_access(self, name):
         self.client.put_public_access_block(
             Bucket=name,
             PublicAccessBlockConfiguration={
@@ -83,3 +91,45 @@ class S3Storage(object):
                 'RestrictPublicBuckets': True,
             }
         )
+
+
+class MockS3Bucket(S3Bucket):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._data = {}
+
+    def put_object(self, key, data):
+        self._data[key] = data
+
+    def get_object(self, key):
+        return self._data[key]
+
+    def delete_objects(self, *keys):
+        for k in keys:
+            self._data.pop(k)
+
+    def keys(self):
+        return self._data.keys()
+
+    def delete_all_objects(self):
+        self._data.clear()
+
+    def delete(self):
+        self.storage._data.pop(self.name)
+
+
+class MockS3Storage(object):
+    def __init__(self):
+        self._data = {}
+
+    def bucket(self, name):
+        if name not in self._data:
+            self.create_bucket(name)
+        return self._data[name]
+
+    def exists(self, name):
+        return name in self._data
+
+    def create_bucket(self, name, acl='private'):
+        self._data[name] = MockS3Bucket(self, name)
+        return self._data[name]
