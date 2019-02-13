@@ -65,12 +65,12 @@ class S3Storage(object):
         return boto3.resource('s3')
 
     def exists(self, name):
-        bucket = self.resource.Bucket(name)
+        bucket = self._resource.Bucket(name)
         bucket.load()
         return bucket.creation_date is not None
 
     def create_bucket(self, name, acl='private'):
-        self.client.create_bucket(
+        self._client.create_bucket(
             Bucket=name,
             CreateBucketConfiguration={
                 'LocationConstraint': self.region
@@ -82,7 +82,7 @@ class S3Storage(object):
         self._block_public_access(name)
 
     def _block_public_access(self, name):
-        self.client.put_public_access_block(
+        self._client.put_public_access_block(
             Bucket=name,
             PublicAccessBlockConfiguration={
                 'BlockPublicAcls': True,
