@@ -6,13 +6,22 @@ class S3Bucket(object):
         self.storage = storage
         self.name = name
 
-    def put_object(self, key, data):
+    def get_url(self, key):
+        url = self.storage._client.generate_presigned_url(
+            'get_object', Params={'Bucket': self.name, 'Key': key}, ExpiresIn=3600
+        )
+        return url
+
+    def put_object(self, key, data, acl='private'):
         self.storage._client.put_object(
-            ACL='private',
+            ACL=acl,
             Body=to_bytes(data),
             Bucket=self.name,
             Key=key
         )
+
+    def acl(self, key, acl='private'):
+        self._bucket().Object(key).Acl().put(ACL='public-read')
 
     def get_object(self, key):
         return self.storage._client.get_object(
@@ -57,7 +66,10 @@ class S3Storage(object):
     @cached_property
     def _client(self):
         import boto3
-        return boto3.client('s3')
+        from botocore.client import Config
+        return boto3.client('s3',
+                            self.region,
+                            config=Config(s3={'addressing_style': 'path'}))
 
     @cached_property
     def _resource(self):
@@ -69,7 +81,7 @@ class S3Storage(object):
         bucket.load()
         return bucket.creation_date is not None
 
-    def create_bucket(self, name, acl='private'):
+    def create_bucket(self, name, acl='private', block=True):
         self._client.create_bucket(
             Bucket=name,
             CreateBucketConfiguration={
@@ -79,7 +91,8 @@ class S3Storage(object):
         )
         bucket = S3Bucket(self, name)
         bucket._bucket().wait_until_exists()
-        self._block_public_access(name)
+        if block:
+            self._block_public_access(name)
 
     def _block_public_access(self, name):
         self._client.put_public_access_block(
@@ -91,6 +104,10 @@ class S3Storage(object):
                 'RestrictPublicBuckets': True,
             }
         )
+
+    def list(self):
+        buckets = [x['Name'] for x in self._client.list_buckets()['Buckets']]
+        return buckets
 
 
 class MockS3Bucket(S3Bucket):
@@ -133,3 +150,6 @@ class MockS3Storage(object):
     def create_bucket(self, name, acl='private'):
         self._data[name] = MockS3Bucket(self, name)
         return self._data[name]
+
+    def list(self):
+        return self._data.keys()
