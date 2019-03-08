@@ -1,5 +1,5 @@
 from .utils import cached_property, to_bytes
-
+from botocore.client import ClientError
 
 class S3Bucket(object):
     def __init__(self, storage, name):
@@ -77,9 +77,12 @@ class S3Storage(object):
         return boto3.resource('s3')
 
     def exists(self, name):
-        bucket = self._resource.Bucket(name)
-        bucket.load()
-        return bucket.creation_date is not None
+        try:
+            self._resource.meta.client.head_bucket(Bucket=name)
+        except ClientError:
+            return False
+        else:
+            return True
 
     def create_bucket(self, name, acl='private', block=True):
         self._client.create_bucket(
@@ -114,6 +117,9 @@ class MockS3Bucket(S3Bucket):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._data = {}
+
+    def get_url(self, key):
+        return ""
 
     def put_object(self, key, data):
         self._data[key] = data
