@@ -1,6 +1,6 @@
 package:
   name: s3everywhere
-  version: v0.2
+  version: {{ environ.get('VERSION', 'v0.4.4') }}
 build:
   number: 1
 requirements:
